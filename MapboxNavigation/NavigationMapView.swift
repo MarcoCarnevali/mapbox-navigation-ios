@@ -271,13 +271,8 @@ open class NavigationMapView: MGLMapView, UIGestureRecognizerDelegate {
         super.layoutSubviews()
         
         //If the map is in tracking mode, make sure we update the camera after the layout pass.
-        if (tracksUserCourse) {            
-            if #available(iOS 14.0, *) {
-                // Since layoutSubviews() is called too often on iOS 14.0, it leads to lags in `UserCourseView` animated updates.
-                // Workaround is to allow `UserCourseView` updates only on iOS versions lower than 14.0.
-            } else {
-                updateCourseTracking(location: userLocationForCourseTracking, camera:self.camera, animated: false)
-            }
+        if (tracksUserCourse) {
+            updateCourseTracking(location: userLocationForCourseTracking, camera:self.camera, animated: false)
         }
     }
     
@@ -478,7 +473,8 @@ open class NavigationMapView: MGLMapView, UIGestureRecognizerDelegate {
         let allRoutesShape = navigationMapViewDelegate?.navigationMapView(self, shapeFor: routes) ?? shape(for: routes, legIndex: legIndex)
         let allRoutesSource = addAllRoutesSource(style, shape: allRoutesShape)
         
-        let mainRouteCasingShape = navigationMapViewDelegate?.navigationMapView(self, shapeFor: [mainRoute]) ?? shape(for: [mainRoute], legIndex: legIndex)
+        let mainRouteCasingShape = navigationMapViewDelegate?.navigationMapView(self, simplifiedShapeFor: mainRoute) ?? shape(forCasingOf: mainRoute, legIndex: legIndex)
+        
         let mainRouteCasingSource = addMainRouteCasingSource(style, shape: mainRouteCasingShape)
         
         let mainRouteLayer = addMainRouteLayer(style, source: allRoutesSource, lineGradient: routeLineGradient(mainRoute, fractionTraveled: 0.0))
@@ -1217,6 +1213,7 @@ open class NavigationMapView: MGLMapView, UIGestureRecognizerDelegate {
             } else {
                 polyline.attributes[MBCurrentLegAttribute] = index == 0
             }
+            polyline.attributes["isAlternateRoute"] = false
             linesPerLeg.append(polyline)
         }
         
