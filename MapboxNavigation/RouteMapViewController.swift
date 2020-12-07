@@ -97,7 +97,11 @@ class RouteMapViewController: UIViewController {
         return UIEdgeInsets(top: topBannerContainerView.bounds.height, left: 20, bottom: bottomBannerContainerView.bounds.height, right: 20)
     }
     
-    var routeLineTracksTraversal = false
+    var routeLineTracksTraversal = false {
+        didSet {
+            mapView.routeLineTracksTraversal = routeLineTracksTraversal
+        }
+    }
 
     typealias LabelRoadNameCompletionHandler = (_ defaultRaodNameAssigned: Bool) -> Void
 
@@ -209,11 +213,13 @@ class RouteMapViewController: UIViewController {
 
     func resumeNotifications() {
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillEnterForeground(notification:)), name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(orientationDidChange(_:)), name: UIDevice.orientationDidChangeNotification, object: nil)
         subscribeToKeyboardNotifications()
     }
 
     func suspendNotifications() {
         NotificationCenter.default.removeObserver(self, name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIDevice.orientationDidChangeNotification, object: nil)
         unsubscribeFromKeyboardNotifications()
     }
 
@@ -259,6 +265,7 @@ class RouteMapViewController: UIViewController {
             mapView.setOverheadCameraView(from: userLocation, along: shape, for: contentInset(forOverviewing: true))
         }
         isInOverviewMode = true
+        updateMapViewComponents()
     }
 
     @objc func toggleMute(_ sender: UIButton) {
@@ -282,7 +289,6 @@ class RouteMapViewController: UIViewController {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         mapView.enableFrameByFrameCourseViewTracking(for: 3)
-        navigationView.reinstallRequiredConstraints()
     }
 
     override func viewDidLayoutSubviews() {
@@ -298,10 +304,16 @@ class RouteMapViewController: UIViewController {
     func updateMapViewContentInsets(animated: Bool = false, completion: CompletionHandler? = nil) {
         mapView.setContentInset(contentInset(forOverviewing: isInOverviewMode), animated: animated, completionHandler: completion)
         mapView.setNeedsUpdateConstraints()
+        
+        updateMapViewComponents()
     }
 
     @objc func applicationWillEnterForeground(notification: NSNotification) {
         mapView.updateCourseTracking(location: router.location, animated: false)
+    }
+    
+    @objc func orientationDidChange(_ notification: Notification) {
+        updateMapViewComponents()
     }
 
     func updateMapOverlays(for routeProgress: RouteProgress) {
@@ -349,6 +361,41 @@ class RouteMapViewController: UIViewController {
     
     @objc func resetFrameRate(_ sender: UIGestureRecognizer) {
         mapView.preferredFramesPerSecond = NavigationMapView.FrameIntervalOptions.defaultFramesPerSecond
+    }
+    
+    /**
+     Method updates `logoView` and `attributionButton` margins to prevent incorrect alignment
+     reported in https://github.com/mapbox/mapbox-navigation-ios/issues/2561. To be able to successfully update margins
+     `RouteMapViewController.automaticallyAdjustsScrollViewInsets` should be set to `true` and then switched back to `false`
+     to prevent spontaneous changes to `MGLMapView.contentInset`.
+     */
+    func updateMapViewComponents() {
+        // FIXME: Current implementation is considered as a workaround of Mapbox Maps SDK issue reported in:
+        // https://github.com/mapbox/mapbox-gl-native-ios/issues/533 and should be revised after root cause is fixed.
+        
+        automaticallyAdjustsScrollViewInsets = true
+        
+        let bottomBannerHeight = bottomBannerContainerView.bounds.height
+        let bottomBannerVerticalOffset = UIScreen.main.bounds.height - bottomBannerHeight - bottomBannerContainerView.frame.origin.y
+        let defaultOffset: CGFloat = 10.0
+        let x: CGFloat = defaultOffset
+        let y: CGFloat = bottomBannerHeight + defaultOffset + bottomBannerVerticalOffset
+        
+        mapView.logoViewPosition = .bottomLeft
+        if #available(iOS 11.0, *) {
+            mapView.logoViewMargins = CGPoint(x: x, y: y - view.safeAreaInsets.bottom)
+        } else {
+            mapView.logoViewMargins = CGPoint(x: x, y: y)
+        }
+        
+        mapView.attributionButtonPosition = .bottomRight
+        if #available(iOS 11.0, *) {
+            mapView.attributionButtonMargins = CGPoint(x: x, y: y - view.safeAreaInsets.bottom)
+        } else {
+            mapView.attributionButtonMargins = CGPoint(x: x, y: y)
+        }
+        
+        automaticallyAdjustsScrollViewInsets = false
     }
     
     func contentInset(forOverviewing overviewing: Bool) -> UIEdgeInsets {
@@ -491,6 +538,8 @@ extension RouteMapViewController: NavigationComponent {
         }
         
         if routeLineTracksTraversal {
+            mapView.updateUpcomingRoutePointIndex(routeProgress: progress)
+            mapView.updateTraveledRouteLine(location.coordinate)
             mapView.updateRoute(progress)
         }
         
@@ -533,6 +582,8 @@ extension RouteMapViewController: NavigationComponent {
     func navigationService(_ service: NavigationService, didRefresh routeProgress: RouteProgress) {
         mapView.show([routeProgress.route], legIndex: routeProgress.legIndex)
         if routeLineTracksTraversal {
+            mapView.updateUpcomingRoutePointIndex(routeProgress: routeProgress)
+            mapView.updateTraveledRouteLine(router.location?.coordinate)
             mapView.updateRoute(routeProgress)
         }
     }

@@ -696,8 +696,10 @@ extension NavigationViewController: NavigationServiceDelegate {
         if #available(iOS 14.0, *), accuracyAuthorization == .reducedAccuracy {
             let title = NSLocalizedString("ENABLE_PRECISE_LOCATION", bundle: .mapboxNavigation, value: "Enable precise location to navigate", comment: "Label indicating precise location is off and needs to be turned on to navigate")
             showStatus(title: title, spinner: false, duration: 20, animated: true, interactive: false)
+            mapView?.reducedAccuracyActivatedMode = true
         } else {
             //Fallback on earlier versions
+            mapView?.reducedAccuracyActivatedMode = false
             return
         }
     }
@@ -811,27 +813,33 @@ extension NavigationViewController: TopBannerViewControllerDelegate {
             if banner.isDisplayingPreviewInstructions {
                 mapViewController?.recenter(self)
             }
-        
-        case .right where !banner.isDisplayingSteps:
-            guard let currentStepIndex = banner.currentPreviewStep?.1 else { return }
-            let remainingSteps = progress.remainingSteps
-            let prevStepIndex = currentStepIndex.advanced(by: -1)
-            guard prevStepIndex >= 0 else { return }
-            
-            let prevStep = remainingSteps[prevStepIndex]
-            preview(step: prevStep, in: banner, remaining: remainingSteps, route: route)
-            
-        case .left where !banner.isDisplayingSteps:
-            let remainingSteps = navigationService.router.routeProgress.remainingSteps
-            let currentStepIndex = banner.currentPreviewStep?.1
-            let nextStepIndex = currentStepIndex?.advanced(by: 1) ?? 0
-            guard nextStepIndex < remainingSteps.count else { return }
-            
-            let nextStep = remainingSteps[nextStepIndex]
-            preview(step: nextStep, in: banner, remaining: remainingSteps, route: route)
-            
         default:
-            return
+            break
+        }
+        
+        if !banner.isDisplayingSteps {
+            switch (direction, UIApplication.shared.userInterfaceLayoutDirection) {
+            case (.right, .leftToRight), (.left, .rightToLeft):
+                guard let currentStepIndex = banner.currentPreviewStep?.1 else { return }
+                let remainingSteps = progress.remainingSteps
+                let prevStepIndex = currentStepIndex.advanced(by: -1)
+                guard prevStepIndex >= 0 else { return }
+                
+                let prevStep = remainingSteps[prevStepIndex]
+                preview(step: prevStep, in: banner, remaining: remainingSteps, route: route)
+                
+            case (.left, .leftToRight), (.right, .rightToLeft):
+                let remainingSteps = navigationService.router.routeProgress.remainingSteps
+                let currentStepIndex = banner.currentPreviewStep?.1
+                let nextStepIndex = currentStepIndex?.advanced(by: 1) ?? 0
+                guard nextStepIndex < remainingSteps.count else { return }
+                
+                let nextStep = remainingSteps[nextStepIndex]
+                preview(step: nextStep, in: banner, remaining: remainingSteps, route: route)
+            
+            default:
+                break
+            }
         }
     }
     
@@ -845,7 +853,11 @@ extension NavigationViewController: TopBannerViewControllerDelegate {
         guard let upcomingStep = legProgress.upcomingStep else { return }
         
         let previewBanner: CompletionHandler = {
-            banner.preview(step: legProgress.currentStep, maneuverStep: upcomingStep, distance: legProgress.currentStep.distance, steps: remaining)
+            // Since Mapbox SDK v6.2.0-beta.1 `MGLMapView.setCenter(_:zoomLevel:direction:animated:completionHandler:)` method is calling `completionHandler`
+            // synchronously, this prevents from well-timed maneuver redrawing in `ManeuverView`. Workaround is to perform asynchronous redrawing on main queue.
+            DispatchQueue.main.async {
+                banner.preview(step: legProgress.currentStep, maneuverStep: upcomingStep, distance: legProgress.currentStep.distance, steps: remaining)
+            }
         }
         
         mapViewController?.center(on: upcomingStep, route: route, legIndex: legIndex, stepIndex: nextStepIndex, animated: animated, completion: previewBanner)
