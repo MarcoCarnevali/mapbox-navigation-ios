@@ -3,7 +3,7 @@ import AVFoundation
 
 public extension AVAudioSession {
     func tryDuckAudio() -> Error? {
-        do {
+       /* do {
             if #available(iOS 12.0, *) {
                 try setCategory(.playback, mode: .voicePrompt, options: [.duckOthers, .mixWithOthers])
             } else {
@@ -12,17 +12,17 @@ public extension AVAudioSession {
             try setActive(true)
         } catch {
             return error
-        }
+        }*/
         return nil
     }
     
     func tryUnduckAudio() -> Error? {
-        do {
+        /*do {
             try setActive(false,
                           options: [.notifyOthersOnDeactivation])
         } catch {
             return error
-        }
+        }*/
         return nil
     }
 }
